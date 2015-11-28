@@ -1,0 +1,132 @@
+;; rsa.scm -- RSA public key cryptography library
+;; Copyright (c) 2014 Alex Shinn.  All rights reserved.
+;; BSD-style license: http://synthcode.com/license.txt
+;; Modified for use with zepto by Veit Heller
+
+(load "srfi/srfi-9")
+
+;; The RSA key type.  The public fields are always present, but the
+;; private key d may be #f.
+(define-record-type rsa-key
+  (rsa:make-rsa-key bits n e d)
+  rsa:rsa-key?
+  (bits rsa:key-bits)
+  (n rsa:key-n)    
+  (e rsa:key-e) 
+  (d rsa:key-d))   
+
+(module "rsa"
+  (exports
+    (list "key-gen-from-primes" key-gen-from-primes)
+    (list "key-gen" key-gen)
+    (list "pub-key" pub-key)
+    (list "encrypt" encrypt)
+    (list "decrypt" decrypt)
+    (list "sign" sign)
+    (list "verify" verify)
+    (list "verify?" verify?))
+
+  (key-gen-from-primes (lambda (bit-length p q . o)
+    (define (choose-exponent phi e)
+      (cond ((>= e phi) (error "couldn't find an exponent for " p q))
+            ((= 1 (math:gcd e phi)) e)
+            (else (choose-exponent phi (+ e 2)))))
+    (let* ((n (* p q))
+           (phi (* (- p 1) (- q 1)))
+           (e (choose-exponent phi (cond ((pair? o) (car o))
+                                         ((< 65537 phi) 65537)
+                                         (else 3))))
+           (d (math:modular-inverse e phi)))
+      (rsa:make-rsa-key bit-length n e d))))
+
+  (key-gen (lambda o
+    (let* ((bit-length (if (pair? o) (car o) 128))
+           (lo (max 3 (expt 2 (- bit-length 1))))
+           (hi (expt 2 bit-length))
+           (p (random-prime lo hi))
+           (q (random-prime-distinct-from lo hi p)))
+      (key-gen-from-primes bit-length p q))))
+
+  (pub-key (lambda (priv-key)
+    "Returns a copy of the given key with the private key, if any, removed."
+    (rsa:make-rsa-key (rsa:key-bits priv-key) (rsa:key-n priv-key)
+                      (rsa:key-e priv-key) #f)))
+
+  (pkcs1-pad (lambda (bv)
+    "From RFC-1423"
+    (let ((pad (- 8 (modulo (byte-vector-length bv) 8))))
+      (byte-vector-append bv (make-byte-vector pad pad)))))
+
+  (pkcs1-unpad (lambda (bv)
+    (let* ((len (byte-vector-length bv))
+           (pad (byte-vector:ref bv (- len 1))))
+      (if (not (<= 1 pad 8))
+          (error "not pkcs1 padded" bv)
+          (byte-vector-copy bv 0 (- len pad))))))
+
+  (encrypt-integer (lambda (pub-key msg)
+    "Actual encryption and decryption are trivially defined as modular exponentiation."
+    (if (>= msg (rsa:key-n pub-key))
+        (error "message larger than modulus" msg (rsa:key-n pub-key)))
+    (math:modpow msg (rsa:key-e pub-key) (rsa:key-n pub-key))))
+
+  (decrypt-integer (lambda (priv-key cipher)
+    (if (>= cipher (rsa:key-n priv-key))
+        (error "cipher larger than modulus"))
+    (math:modpow cipher (rsa:key-d priv-key) (rsa:key-n priv-key))))
+
+  (convert-plain (lambda (f key msg)
+    "Arbitrary messages are encrypted by converting encoded bytevectors
+    to and from integers.
+    TODO: user emsa-pss encoding"
+    (cond
+     ((byte-vector? msg)
+      (integer->byte-vector (f key (byte-vector->integer (pkcs1-pad msg)))))
+     ((string? msg) (convert-plain f key (string->utf8 msg)))
+     (else (f key msg)))))
+
+  (convert-cipher (lambda (f key cipher)
+    (cond
+     ((byte-vector? cipher)
+      (pkcs1-unpad (integer->byte-vector (f key (byte-vector->integer cipher)))))
+     ((string? cipher) (convert-cipher f key (string->utf8 cipher)))
+     (else (f key cipher)))))
+
+  (encrypt (lambda (pub-key msg)
+    "Encrypts msg for the given public key pub-key.
+     msg may be an integer or bytevector, in which case the
+     result is of the same type, or a string, in which case the string
+     is first coerced to a utf8 encoded bytevector."
+    (if (not (rsa:key-e pub-key))
+        (error "can't encrypt without a public key" pub-key)
+        (convert-plain encrypt-integer pub-key msg))))
+
+  (decrypt (lambda (priv-key cipher)
+    "Decrypts cipher using the given private key priv-key.
+     cipher may be an integer or bytevector, in which case the
+     result is of the same type, or a string, in which case the string
+     is first coerced to a utf8 encoded bytevector."
+    (if (not (rsa:key-d priv-key))
+        (error "can't decrypt without a private key" priv-key)
+        (convert-cipher decrypt-integer priv-key cipher))))
+
+  (sign (lambda (priv-key msg)
+    "Signs msg using the given private key priv-key.
+     msg may be an integer or bytevector, in which case the
+     result is of the same type, or a string, in which case the string
+     is first coerced to a utf8 encoded bytevector."
+    (if (not (rsa:key-d priv-key))
+        (error "can't sign without a private key" priv-key)
+        (convert-plain decrypt-integer priv-key msg))))
+
+  (verify (lambda (pub-key sig)
+    "Returns the verified (decrypted) message for the signature sig."
+    (if (not (rsa:key-e pub-key))
+        (error "can't verify without a public key" pub-key)
+      (convert-cipher encrypt-integer pub-key sig))))
+
+  (verify? (lambda (pub-key msg sig)
+    "Returns true iff sig is a valid signature of msg for
+     the given public key pub-key."
+    (equal? (if (string? msg) (string->utf8 msg) msg)
+            (verify pub-key sig)))))
