@@ -3,8 +3,6 @@
 ;; BSD-style license: http://synthcode.com/license.txt
 ;; Modified for use with zepto by Veit Heller
 
-(load "srfi/srfi-9")
-
 ;; The RSA key type.  The public fields are always present, but the
 ;; private key d may be #f.
 (define-record-type rsa-key
