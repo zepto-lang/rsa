@@ -14,7 +14,7 @@
   (d rsa:key-d))   
 
 (module "rsa"
-  (exports
+  (export
     (list "key-gen-from-primes" key-gen-from-primes)
     (list "key-gen" key-gen)
     (list "pub-key" pub-key)
