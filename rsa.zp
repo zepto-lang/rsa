@@ -53,15 +53,15 @@
 
   (pkcs1-pad (lambda (bv)
     "From RFC-1423"
-    (let ((pad (- 8 (modulo (byte-vector-length bv) 8))))
-      (byte-vector-append bv (make-byte-vector pad pad)))))
+    (let ((pad (- 8 (modulo (byte-vector:length bv) 8))))
+      (++ bv (make-byte-vector pad pad)))))
 
   (pkcs1-unpad (lambda (bv)
-    (let* ((len (byte-vector-length bv))
+    (let* ((len (byte-vector:length bv))
            (pad (byte-vector:ref bv (- len 1))))
-      (if (not (<= 1 pad 8))
+      (if (not (and (<= 1 pad) (<= pad 8)))
           (error "not pkcs1 padded" bv)
-          (byte-vector-copy bv 0 (- len pad))))))
+          (byte-vector:subvector bv 0 (- len pad))))))
 
   (encrypt-integer (lambda (pub-key msg)
     "Actual encryption and decryption are trivially defined as modular exponentiation."
@@ -81,14 +81,14 @@
     (cond
      ((byte-vector? msg)
       (integer->byte-vector (f key (byte-vector->integer (pkcs1-pad msg)))))
-     ((string? msg) (convert-plain f key (string->utf8 msg)))
+     ((string? msg) (convert-plain f key (string->byte-vector msg)))
      (else (f key msg)))))
 
   (convert-cipher (lambda (f key cipher)
     (cond
      ((byte-vector? cipher)
       (pkcs1-unpad (integer->byte-vector (f key (byte-vector->integer cipher)))))
-     ((string? cipher) (convert-cipher f key (string->utf8 cipher)))
+     ((string? cipher) (convert-cipher f key (string->byte-vector cipher)))
      (else (f key cipher)))))
 
   (encrypt (lambda (pub-key msg)
