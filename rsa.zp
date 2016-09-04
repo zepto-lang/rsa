@@ -9,9 +9,9 @@
   (rsa:make-rsa-key bits n e d)
   rsa:rsa-key?
   (bits rsa:key-bits)
-  (n rsa:key-n)    
-  (e rsa:key-e) 
-  (d rsa:key-d))   
+  (n rsa:key-n)
+  (e rsa:key-e)
+  (d rsa:key-d))
 
 (module "rsa"
   (export
@@ -25,6 +25,14 @@
     (list "verify?" verify?))
 
   (key-gen-from-primes (lambda (bit-length p q . o)
+    "Given a bit-length and two primes, generates a rsa key.
+
+     params:
+       - bit-length: the key bit length
+       - p: the first prime
+       - q: the second prime (must be coprime)
+     complexity: O(1)
+     returns: a RSA key"
     (define (choose-exponent phi e)
       (cond ((>= e phi) (error "couldn't find an exponent for " p q))
             ((= 1 (math:gcd e phi)) e)
@@ -38,6 +46,13 @@
       (rsa:make-rsa-key bit-length n e d))))
 
   (key-gen (lambda o
+    "generates a RSA key. Defaults to 1024 bits length if not given an argument.
+     Frontend for <fun>rsa:key-gen-from-primes</fun> that generates prime numbers.
+
+    params:
+      - o: the size of the key to generate (optional)
+    complexity: random (because of the prime generation
+    returns: a new key"
     (let* ((bit-length (if (null? o) 1024 (car o)))
            (lo (max 3 (expt 2 (- bit-length 1))))
            (hi (expt 2 bit-length))
@@ -92,40 +107,72 @@
      (else (f key cipher)))))
 
   (encrypt (lambda (pub-key msg)
-    "Encrypts msg for the given public key pub-key.
-     msg may be an integer or bytevector, in which case the
+    "Encrypts <par>msg</par> for the given public key <par>pub-key</par>.
+     <par>msg</par> may be an integer or bytevector, in which case the
      result is of the same type, or a string, in which case the string
-     is first coerced to a utf8 encoded bytevector."
+     is first coerced to a utf8 encoded bytevector.
+
+     params:
+       - pub-key: the given RSA key
+       - msg: the message to encrypt
+     complexity: O(n)
+     returns: the cyphertext"
     (if (not (rsa:key-e pub-key))
         (error "can't encrypt without a public key" pub-key)
         (convert-plain encrypt-integer pub-key msg))))
 
   (decrypt (lambda (priv-key cipher)
-    "Decrypts cipher using the given private key priv-key.
-     cipher may be an integer or bytevector, in which case the
+    "Decrypts cipher <par>using</par> the given private key <par>priv-key</par>.
+     <par>cipher</par> may be an integer or bytevector, in which case the
      result is of the same type, or a string, in which case the string
-     is first coerced to a utf8 encoded bytevector."
+     is first coerced to a utf8 encoded bytevector.
+
+     params:
+        - priv-key: the given RSA key
+        - cipher: the ciphertext to decrypt
+     complexity: O(n)
+     returns: the decrypted message"
     (if (not (rsa:key-d priv-key))
         (error "can't decrypt without a private key" priv-key)
         (convert-cipher decrypt-integer priv-key cipher))))
 
   (sign (lambda (priv-key msg)
-    "Signs msg using the given private key priv-key.
-     msg may be an integer or bytevector, in which case the
+    "Signs <par>msg</par> using the given private key <par>priv-key</par>.
+     <par>msg</par> may be an integer or bytevector, in which case the
      result is of the same type, or a string, in which case the string
-     is first coerced to a utf8 encoded bytevector."
+     is first coerced to a utf8 encoded bytevector.
+
+     params:
+     params:
+        - priv-key: the given RSA key
+        - cipher: the ciphertext to decrypt
+     complexity: O(n)
+     returns: the signed message"
     (if (not (rsa:key-d priv-key))
         (error "can't sign without a private key" priv-key)
         (convert-plain decrypt-integer priv-key msg))))
 
   (verify (lambda (pub-key sig)
-    "Returns the verified (decrypted) message for the signature sig."
+    "Returns the verified (decrypted) message for the signature <par>sig</par>.
+
+     params:
+       - pub-key: the given RSA key
+       - sig: the given signature
+     complexity: O(n)
+     returns: the decrypted/verified message"
     (if (not (rsa:key-e pub-key))
         (error "can't verify without a public key" pub-key)
       (convert-cipher encrypt-integer pub-key sig))))
 
   (verify? (lambda (pub-key msg sig)
-    "Returns true iff sig is a valid signature of msg for
-     the given public key pub-key."
+    "Returns true iff <par>sig</par> is a valid signature of <par>msg</par> for
+     the given public key <par>pub-key</par>.
+
+     params:
+      - pub-key: the given RSA key
+      - msg: the message to verify
+      - sig: the signature
+     complexity: O(n)
+     returns: a boolean"
     (equal? (if (string? msg) (string->utf8 msg) msg)
             (verify pub-key sig)))))
