@@ -14,7 +14,7 @@ Here are a few example:
 (define keygen (import "rsa:keygen"))
 (define key (key-gen)) ; will yield a rsa key type with the fields bits (number of bits), n, e and d
 ; If you don't know what these are, don't bother with them
-(define decrypt (encrypt 1000)) ; => 1000
+(decrypt (encrypt 1000)) ; => 1000
 ```
 
 Additional methods include `key-gen-from-primes` if you want to supply
